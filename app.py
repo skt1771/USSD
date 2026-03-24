@@ -6,7 +6,6 @@ import os
 import glob
 import gc
 
-# ページ設定
 st.set_page_config(
     page_title="米国株RSダッシュボード",
     page_icon="📈",
@@ -46,16 +45,67 @@ def filter_data_by_month(all_data: list, selected_month: str) -> list:
 
 
 # =============================================
+# RS値 → 背景色（matplotlib不要）
+# =============================================
+
+def rs_to_bgcolor(val: float) -> str:
+    try:
+        v = float(val)
+    except (TypeError, ValueError):
+        return ''
+
+    v = max(0.0, min(100.0, v))
+
+    stops = [
+        (0,   0xd7, 0x30, 0x27),
+        (25,  0xf4, 0x6d, 0x43),
+        (50,  0xff, 0xff, 0xbf),
+        (75,  0x74, 0xc4, 0x76),
+        (100, 0x1a, 0x96, 0x41),
+    ]
+
+    for i in range(len(stops) - 1):
+        v0, r0, g0, b0 = stops[i]
+        v1, r1, g1, b1 = stops[i + 1]
+        if v0 <= v <= v1:
+            t = (v - v0) / (v1 - v0)
+            r = int(r0 + t * (r1 - r0))
+            g = int(g0 + t * (g1 - g0))
+            b = int(b0 + t * (b1 - b0))
+            brightness = 0.299 * r + 0.587 * g + 0.114 * b
+            fg = '#000000' if brightness > 128 else '#ffffff'
+            return f'background-color: #{r:02x}{g:02x}{b:02x}; color: {fg}'
+
+    return ''
+
+
+def color_rs_col(series: pd.Series) -> list:
+    return [rs_to_bgcolor(v) for v in series]
+
+
+def color_diff_col(series: pd.Series) -> list:
+    styles = []
+    for v in series:
+        try:
+            val = int(v)
+        except (TypeError, ValueError):
+            styles.append('')
+            continue
+        if val > 0:
+            styles.append('color: #2e7d32; font-weight: bold')
+        elif val < 0:
+            styles.append('color: #c62828; font-weight: bold')
+        else:
+            styles.append('')
+    return styles
+
+
+# =============================================
 # データ読み込み
 # =============================================
 
 @st.cache_data(ttl=300)
 def load_all_data(data_folder: str = DATA_FOLDER) -> list:
-    """
-    Screening_Results シートから
-      Sector / Sector_RS_Pct_CW / Sector_RS_Pct_EW
-    を抽出。セクターごとに first() で代表値を取得する。
-    """
     all_data = []
 
     if not os.path.exists(data_folder):
@@ -85,7 +135,6 @@ def load_all_data(data_folder: str = DATA_FOLDER) -> list:
 
             with pd.ExcelFile(file_path) as excel:
 
-                # ── Screening_Results ──────────────────────────────
                 sector_rs_df = None
                 if 'Screening_Results' in excel.sheet_names:
                     raw = excel.parse(
@@ -101,7 +150,6 @@ def load_all_data(data_folder: str = DATA_FOLDER) -> list:
                            )
                     )
 
-                # ── Market_Summary ─────────────────────────────────
                 market_summary = None
                 if 'Market_Summary' in excel.sheet_names:
                     ms = excel.parse('Market_Summary')
@@ -136,19 +184,14 @@ def load_all_data(data_folder: str = DATA_FOLDER) -> list:
 
 def build_heatmap(
     month_data: list,
-    value_col: str,          # 'Sector_RS_Pct_CW' or 'Sector_RS_Pct_EW'
+    value_col: str,
     title: str,
 ) -> go.Figure | None:
-    """
-    value_col の実値（0〜100）をそのまま色スケールに使うヒートマップ。
-    最新日の値で降順ソート（値が高いセクターを上段に表示）。
-    """
+
     records = []
     for dp in month_data:
         df = dp['sector_rs_df']
-        if df is None or df.empty:
-            continue
-        if value_col not in df.columns:
+        if df is None or df.empty or value_col not in df.columns:
             continue
         tmp = df[['Sector', value_col]].copy()
         tmp['Date'] = dp['display_date']
@@ -166,9 +209,10 @@ def build_heatmap(
         aggfunc='first'
     )
 
-    # 最新日の値で降順ソート
+    # 最新日の値で昇順ソート
+    # → Plotlyは下から上に描画するため、昇順にすると画面上は高い順（上が1位）になる
     latest_col = pivot.columns[-1]
-    pivot = pivot.sort_values(by=latest_col, ascending=False)
+    pivot = pivot.sort_values(by=latest_col, ascending=True)
 
     x_labels = [d.strftime('%m/%d') for d in pivot.columns]
     y_labels  = pivot.index.tolist()
@@ -212,28 +256,23 @@ def build_heatmap(
 
 
 # =============================================
-# 最新ランキング表（CW / EW 並列）
+# 比較表生成
 # =============================================
 
 def build_latest_table(latest_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    CW / EW 両方の値を含む最新ランキング表を生成する。
-    CW の値で降順ソートし、EW のランクを別列で付与する。
-    """
     if latest_df is None or latest_df.empty:
         return pd.DataFrame()
 
     df = latest_df[['Sector', 'Sector_RS_Pct_CW', 'Sector_RS_Pct_EW']].copy()
-
-    # CW ランク
     df = df.sort_values('Sector_RS_Pct_CW', ascending=False).reset_index(drop=True)
-    df.insert(0, 'CW Rank', range(1, len(df) + 1))
+    df.insert(0, 'CW順位', range(1, len(df) + 1))
 
-    # EW ランク（値が大きいほど上位）
     ew_rank = df['Sector_RS_Pct_EW'].rank(ascending=False, method='min').astype(int)
-    df.insert(3, 'EW Rank', ew_rank)
+    df.insert(3, 'EW順位', ew_rank)
 
-    df.columns = ['CW順位', 'セクター', 'RS%（CW）', 'EW順位', 'RS%（EW）']
+    df['順位差\n(EW-CW)'] = df['CW順位'] - df['EW順位']
+
+    df.columns = ['CW順位', 'セクター', 'RS%（CW）', 'EW順位', 'RS%（EW）', '順位差\n(EW-CW)']
     return df
 
 
@@ -277,7 +316,7 @@ if latest['market_summary']:
 
 st.markdown("---")
 
-# ── 月選択（CW / EW 共通） ───────────────────────────────
+# ── 月選択 ───────────────────────────────────────────────
 st.header("📊 セクター RS 推移（CW / EW）")
 
 available_months = get_available_months(all_data)
@@ -294,7 +333,7 @@ with col_sel:
 month_data = filter_data_by_month(all_data, selected_month)
 st.caption(f"📅 {selected_month} のデータ: {len(month_data)} 日分")
 
-# ── CW / EW タブ ────────────────────────────────────────
+# ── タブ ─────────────────────────────────────────────────
 tab_cw, tab_ew, tab_compare = st.tabs([
     "📈 Cap Weight（CW）",
     "⚖️ Equal Weight（EW）",
@@ -333,42 +372,25 @@ with tab_compare:
     st.subheader("📋 最新セクター CW / EW ランキング比較")
     st.caption("CW順位で降順ソート。EW順位はEW値に基づく独立したランクです。")
 
-    latest_df = latest['sector_rs_df']
+    latest_df  = latest['sector_rs_df']
     compare_df = build_latest_table(latest_df)
 
     if not compare_df.empty:
-
-        # CW順位とEW順位の差分を追加（正=CWのほうが上位、負=EWのほうが上位）
-        compare_df['順位差(CW-EW)'] = compare_df['EW順位'] - compare_df['CW順位']
-
-        def color_diff(val):
-            """順位差をカラーで強調"""
-            if val > 0:
-                # EWのほうが上位（CWに比べて小型株が強い）
-                return 'color: #2e7d32; font-weight: bold'
-            elif val < 0:
-                # CWのほうが上位（大型株が強い）
-                return 'color: #c62828; font-weight: bold'
-            return ''
-
         styled = (
             compare_df.style
-            .applymap(color_diff, subset=['順位差(CW-EW)'])
+            .apply(color_rs_col, subset=['RS%（CW）'])
+            .apply(color_rs_col, subset=['RS%（EW）'])
+            .apply(color_diff_col, subset=['順位差\n(EW-CW)'])
             .format({
-                'RS%（CW）': '{:.0f}',
-                'RS%（EW）': '{:.0f}',
-                '順位差(CW-EW)': '{:+d}',
+                'RS%（CW）':       '{:.0f}',
+                'RS%（EW）':       '{:.0f}',
+                '順位差\n(EW-CW)': '{:+d}',
             })
-            .background_gradient(
-                subset=['RS%（CW）', 'RS%（EW）'],
-                cmap='RdYlGn',
-                vmin=0, vmax=100
-            )
         )
         st.dataframe(styled, use_container_width=True, hide_index=True, height=450)
 
         st.markdown("""
-        **順位差（CW－EW）の見方：**
+        **順位差（EW－CW）の見方：**
         - 🟢 **プラス（緑）**: EWのほうが上位 → 中小型株が大型株より強い
         - 🔴 **マイナス（赤）**: CWのほうが上位 → 大型株が中小型株より強い
         """)
