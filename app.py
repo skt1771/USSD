@@ -202,21 +202,29 @@ def build_heatmap(
 
     ts_df = pd.concat(records, ignore_index=True)
 
-    pivot = ts_df.pivot_table(
+    # RS値のピボット（色付け用）
+    pivot_val = ts_df.pivot_table(
         index='Sector',
         columns='Date',
         values=value_col,
         aggfunc='first'
     )
 
-    # 最新日の値で昇順ソート
-    # → Plotlyは下から上に描画するため、昇順にすると画面上は高い順（上が1位）になる
-    latest_col = pivot.columns[-1]
-    pivot = pivot.sort_values(by=latest_col, ascending=True)
+    # ランクのピボット（セル内テキスト用）
+    # 各日付ごとにRS値の降順でランク付け（1位が最高RS）
+    pivot_rank = pivot_val.rank(axis=0, ascending=False, method='min').astype(int)
 
-    x_labels = [d.strftime('%m/%d') for d in pivot.columns]
-    y_labels  = pivot.index.tolist()
-    z_vals    = pivot.values
+    # 最新日のランクで昇順ソート
+    # → Plotlyは下から上に描画するため、昇順にすると画面上は上が1位になる
+    latest_col = pivot_val.columns[-1]
+    sort_order = pivot_rank[latest_col].sort_values(ascending=True).index
+    pivot_val  = pivot_val.loc[sort_order]
+    pivot_rank = pivot_rank.loc[sort_order]
+
+    x_labels  = [d.strftime('%m/%d') for d in pivot_val.columns]
+    y_labels  = pivot_val.index.tolist()
+    z_vals    = pivot_val.values   # 色はRS値
+    text_vals = pivot_rank.values  # テキストはランク番号
 
     fig = go.Figure(data=go.Heatmap(
         z=z_vals,
@@ -225,8 +233,8 @@ def build_heatmap(
         colorscale='RdYlGn',
         zmin=0,
         zmax=100,
-        text=z_vals,
-        texttemplate='%{text:.0f}',
+        text=text_vals,
+        texttemplate='%{text}',     # ランク番号をそのまま表示
         textfont={"size": 12},
         hoverongaps=False,
         colorbar=dict(
@@ -238,6 +246,7 @@ def build_heatmap(
         hovertemplate=(
             '<b>セクター</b>: %{y}<br>'
             '<b>日付</b>: %{x}<br>'
+            '<b>ランク</b>: %{text}<br>'
             f'<b>{value_col}</b>: ' + '%{z:.1f}<br>'
             '<extra></extra>'
         )
