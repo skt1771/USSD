@@ -362,6 +362,33 @@ def build_latest_sector_table(latest_df: pd.DataFrame) -> pd.DataFrame:
 
 
 # =============================================
+# インダストリー比較表
+# =============================================
+
+def build_latest_industry_table(latest_df: pd.DataFrame, top_n: int = 30) -> pd.DataFrame:
+    if latest_df is None or latest_df.empty:
+        return pd.DataFrame()
+
+    df = latest_df[['Industry', 'Industry_RS_Pct_CW', 'Industry_RS_Pct_EW']].copy()
+
+    # CW順位
+    df = df.sort_values('Industry_RS_Pct_CW', ascending=False).reset_index(drop=True)
+    df.insert(0, 'CW順位', range(1, len(df) + 1))
+
+    # EW順位
+    ew_rank = df['Industry_RS_Pct_EW'].rank(ascending=False, method='min').astype(int)
+    df.insert(3, 'EW順位', ew_rank)
+
+    # 順位差: プラス → EWのほうが上位
+    df['順位差\n(EW-CW)'] = df['CW順位'] - df['EW順位']
+
+    df.columns = ['CW順位', 'インダストリー', 'RS%（CW）', 'EW順位', 'RS%（EW）', '順位差\n(EW-CW)']
+
+    # CW上位 top_n のみ表示
+    return df.head(top_n)
+
+
+# =============================================
 # メイン UI
 # =============================================
 
@@ -419,12 +446,13 @@ month_data = filter_data_by_month(all_data, selected_month)
 st.caption(f"📅 {selected_month} のデータ: {len(month_data)} 日分")
 
 # ── タブ ─────────────────────────────────────────────────
-tab_sec_cw, tab_sec_ew, tab_ind_cw, tab_ind_ew, tab_compare = st.tabs([
+tab_sec_cw, tab_sec_ew, tab_ind_cw, tab_ind_ew, tab_sec_compare, tab_ind_compare = st.tabs([
     "📈 セクター CW",
     "⚖️ セクター EW",
     "🏭 インダストリー CW",
     "🏭 インダストリー EW",
     "🔀 セクター CW/EW 比較",
+    "🔀 インダストリー CW/EW 比較",
 ])
 
 # ---- セクター CW ----------------------------------------
@@ -504,7 +532,7 @@ with tab_ind_ew:
         st.info("データが1日分しかありません（最低2日分必要）。")
 
 # ---- セクター CW/EW 比較表 ------------------------------
-with tab_compare:
+with tab_sec_compare:
     st.subheader("📋 最新セクター CW / EW ランキング比較")
     st.caption("CW順位で昇順ソート。EW順位はEW値に基づく独立したランクです。")
 
@@ -523,6 +551,45 @@ with tab_compare:
             })
         )
         st.dataframe(styled, use_container_width=True, hide_index=True, height=450)
+        st.markdown("""
+        **順位差（EW－CW）の見方：**
+        - 🟢 **プラス（緑）**: EWのほうが上位 → 中小型株が大型株より強い
+        - 🔴 **マイナス（赤）**: CWのほうが上位 → 大型株が中小型株より強い
+        """)
+    else:
+        st.info("最新ファイルに Screening_Results シートが見つかりません。")
+
+# ---- インダストリー CW/EW 比較表 ------------------------
+with tab_ind_compare:
+    st.subheader("📋 最新インダストリー CW / EW ランキング比較")
+    st.caption("CW順位で昇順ソート。EW順位はEW値に基づく独立したランクです。")
+
+    col_slider, _ = st.columns([2, 8])
+    with col_slider:
+        top_n_compare = st.slider(
+            "表示するインダストリー数（上位）",
+            min_value=10, max_value=146, value=30, step=5,
+            key="industry_compare_top_n"
+        )
+
+    ind_compare_df = build_latest_industry_table(
+        latest['industry_rs_df'],
+        top_n=top_n_compare
+    )
+
+    if not ind_compare_df.empty:
+        styled = (
+            ind_compare_df.style
+            .apply(color_rs_col, subset=['RS%（CW）'])
+            .apply(color_rs_col, subset=['RS%（EW）'])
+            .apply(color_diff_col, subset=['順位差\n(EW-CW)'])
+            .format({
+                'RS%（CW）':       '{:.0f}',
+                'RS%（EW）':       '{:.0f}',
+                '順位差\n(EW-CW)': '{:+d}',
+            })
+        )
+        st.dataframe(styled, use_container_width=True, hide_index=True, height=600)
         st.markdown("""
         **順位差（EW－CW）の見方：**
         - 🟢 **プラス（緑）**: EWのほうが上位 → 中小型株が大型株より強い
