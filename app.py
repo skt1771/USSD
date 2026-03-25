@@ -857,44 +857,65 @@ def render_momentum_tab_both(
         st.subheader("💹 バイプレッシャー条件")
         st.caption("各項目ごとにON/OFFを切り替えられます。")
 
-        # ★ デフォルト値をカテゴリ別に設定
-        #   col_name, label, chk_key, val_key, default_val
         bp_items = [
             ('BP_Stock',       'BP_Stock',
-             f"{tab_key}_chk_bp_stock",   f"{tab_key}_val_bp_stock",   0.60),  # ★ Stock: 0.60
+             f"{tab_key}_chk_bp_stock",   f"{tab_key}_val_bp_stock",   0.60),
             ('BP_Sector_CW',   'BP_Sector_CW',
-             f"{tab_key}_chk_bp_sec_cw",  f"{tab_key}_val_bp_sec_cw",  0.50),  # ★ Sector: 0.50
+             f"{tab_key}_chk_bp_sec_cw",  f"{tab_key}_val_bp_sec_cw",  0.50),
             ('BP_Sector_EW',   'BP_Sector_EW',
-             f"{tab_key}_chk_bp_sec_ew",  f"{tab_key}_val_bp_sec_ew",  0.50),  # ★ Sector: 0.50
+             f"{tab_key}_chk_bp_sec_ew",  f"{tab_key}_val_bp_sec_ew",  0.50),
             ('BP_Industry_CW', 'BP_Industry_CW',
-             f"{tab_key}_chk_bp_ind_cw",  f"{tab_key}_val_bp_ind_cw",  0.55),  # ★ Industry: 0.55
+             f"{tab_key}_chk_bp_ind_cw",  f"{tab_key}_val_bp_ind_cw",  0.55),
             ('BP_Industry_EW', 'BP_Industry_EW',
-             f"{tab_key}_chk_bp_ind_ew",  f"{tab_key}_val_bp_ind_ew",  0.55),  # ★ Industry: 0.55
+             f"{tab_key}_chk_bp_ind_ew",  f"{tab_key}_val_bp_ind_ew",  0.55),
         ]
 
-        bp_settings = {}  # {col_name: (enabled, min_val)}
+        # bp_settings: {col_name: (enabled_min, min_val, enabled_max, max_val)}
+        bp_settings = {}
 
         col_bp1, col_bp2 = st.columns(2)
         for i, (col_name, label, chk_key, val_key, default_val) in enumerate(bp_items):
             target_col = col_bp1 if i % 2 == 0 else col_bp2
             with target_col:
-                enabled = st.checkbox(
-                    f"{label} を有効にする",
+                # ── 最小値 ──
+                enabled_min = st.checkbox(
+                    f"{label} 最小値を有効にする",
                     value=True,
                     key=chk_key,
                 )
-                if enabled:
+                if enabled_min:
                     min_val = st.number_input(
                         f"{label} 最小値",
-                        value=default_val,          # ★ カテゴリ別デフォルト値
+                        value=default_val,
                         step=0.05, format="%.2f",
                         key=val_key,
                     )
                 else:
                     min_val = 0.0
-                bp_settings[col_name] = (enabled, min_val)
 
-        # 設定サマリー
+                # ── 最大値（BP_Stock のみ追加、デフォルトOFF）──
+                if col_name == 'BP_Stock':
+                    enabled_max = st.checkbox(
+                        f"{label} 最大値を有効にする",
+                        value=False,                      # ★ デフォルトOFF
+                        key=f"{tab_key}_chk_bp_stock_max",
+                    )
+                    if enabled_max:
+                        max_val = st.number_input(
+                            f"{label} 最大値",
+                            value=0.70,                   # ★ デフォルト 0.70
+                            step=0.05, format="%.2f",
+                            key=f"{tab_key}_val_bp_stock_max",
+                        )
+                    else:
+                        max_val = float('inf')
+                else:
+                    enabled_max = False
+                    max_val = float('inf')
+
+                bp_settings[col_name] = (enabled_min, min_val, enabled_max, max_val)
+
+        # ── 設定サマリー ──────────────────────────────────
         st.markdown("---")
         st.markdown("**📋 現在の設定:**")
         lines = [
@@ -932,10 +953,13 @@ def render_momentum_tab_both(
                 f"  - 業種RS EW: {industry_rs_ew_min}% 以上",
             ]
         lines.append("バイプレッシャー条件:")
-        for col_name, (enabled, min_val) in bp_settings.items():
-            lines.append(
-                f"  - {col_name}: {'✅ ' + f'{min_val:.2f}' + ' 以上' if enabled else '❌ 無効'}"
-            )
+        for col_name, (enabled_min, min_val, enabled_max, max_val) in bp_settings.items():
+            min_str = f"最小 {min_val:.2f} 以上" if enabled_min else "最小 無効"
+            if col_name == 'BP_Stock':
+                max_str = f"／最大 {max_val:.2f} 以下" if enabled_max else "／最大 無効"
+            else:
+                max_str = ""
+            lines.append(f"  - {col_name}: {min_str}{max_str}")
         st.info("\n".join(lines))
 
     # ── フィルタリング実行 ────────────────────────────────
@@ -986,10 +1010,14 @@ def render_momentum_tab_both(
         if 'Industry_RS_Pct_EW' in filtered.columns:
             filtered = filtered[filtered['Industry_RS_Pct_EW'] >= industry_rs_ew_min]
 
-    # バイプレッシャー条件（項目ごとに個別適用）
-    for col_name, (enabled, min_val) in bp_settings.items():
-        if enabled and col_name in filtered.columns:
+    # ── バイプレッシャー条件（最小値・最大値を個別適用）──
+    for col_name, (enabled_min, min_val, enabled_max, max_val) in bp_settings.items():
+        if col_name not in filtered.columns:
+            continue
+        if enabled_min:
             filtered = filtered[filtered[col_name] >= min_val]
+        if enabled_max:
+            filtered = filtered[filtered[col_name] <= max_val]
 
     # ── 結果表示 ──────────────────────────────────────────
     st.markdown("---")
