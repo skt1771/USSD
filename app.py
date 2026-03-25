@@ -693,7 +693,7 @@ def render_momentum_tab(
 
 
 # =============================================
-# ★ モメンタム銘柄スクリーニング（CW + EW 両条件）
+# モメンタム銘柄スクリーニング（CW + EW 両条件）
 # =============================================
 
 def render_momentum_tab_both(
@@ -715,7 +715,7 @@ def render_momentum_tab_both(
 
     with st.expander("⚙️ フィルター条件を設定する", expanded=True):
 
-        # ── テクニカル・価格・ファンダメンタル ──────────────
+        # ── テクニカル条件 ───────────────────────────────────
         st.subheader("📊 テクニカル条件")
         col_t1, col_t2 = st.columns(2)
 
@@ -727,11 +727,11 @@ def render_momentum_tab_both(
             if enable_technical:
                 st.markdown("**ATR条件**")
                 atr_min = st.number_input(
-                    "ATR from MA50 最小値 (%)", value=2.0, step=0.1,
+                    "ATR from MA50 最小値 (%)", value=1.5, step=0.1,  # ★ 修正
                     key=f"{tab_key}_atr_min"
                 )
                 atr_max = st.number_input(
-                    "ATR from MA50 最大値 (%)", value=5.0, step=0.1,
+                    "ATR from MA50 最大値 (%)", value=6.0, step=0.1,  # ★ 修正
                     key=f"{tab_key}_atr_max"
                 )
                 adr_min = st.number_input(
@@ -790,7 +790,7 @@ def render_momentum_tab_both(
 
         st.markdown("---")
 
-        # ── RS条件（CW / EW を横並び） ──────────────────────
+        # ── RS条件（CW / EW 横並び） ─────────────────────────
         st.subheader("📈 RS条件（CW・EW 両方）")
         col_cw, col_ew = st.columns(2)
 
@@ -827,8 +827,6 @@ def render_momentum_tab_both(
                 key=f"{tab_key}_enable_rs_ew"
             )
             if enable_rs_ew:
-                # Individual RS は CW と共有（同一カラム）なので
-                # EW 側では Sector / Industry のみ設定
                 sector_rs_ew_min = st.number_input(
                     "Sector RS Pct EW 最小値",
                     value=79, step=1,
@@ -937,7 +935,6 @@ def render_momentum_tab_both(
         st.warning("⚠️ 条件に合致する銘柄がありません。条件を緩和してください。")
         return
 
-    # CW / EW 両方のカラムを並べて表示
     display_cols_ordered = [
         'Symbol', 'Company Name', 'Sector', 'Industry',
         'Screening_Score', 'Technical_Score', 'Fundamental_Score',
@@ -1096,7 +1093,7 @@ st.caption(f"📅 {selected_month} のデータ: {len(month_data)} 日分")
     tab_ind_compare,
     tab_momentum_cw,
     tab_momentum_ew,
-    tab_momentum_both,   # ★ 新規
+    tab_momentum_both,
 ) = st.tabs([
     "📈 セクター CW",
     "⚖️ セクター EW",
@@ -1106,7 +1103,7 @@ st.caption(f"📅 {selected_month} のデータ: {len(month_data)} 日分")
     "🔀 インダストリー CW/EW 比較",
     "🚀 モメンタム銘柄 CW",
     "⚖️ モメンタム銘柄 EW",
-    "🎯 モメンタム銘柄 CW＋EW",  # ★
+    "🎯 モメンタム銘柄 CW＋EW",
 ])
 
 # ---- セクター CW ----------------------------------------
@@ -1277,7 +1274,7 @@ with tab_momentum_ew:
         tab_key='mom_ew',
     )
 
-# ---- モメンタム銘柄 CW＋EW（★ 新規） -------------------
+# ---- モメンタム銘柄 CW＋EW ------------------------------
 with tab_momentum_both:
     st.header("🎯 モメンタム銘柄スクリーニング（CW＋EW 両条件）")
     st.info(
