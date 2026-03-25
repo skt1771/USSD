@@ -734,12 +734,19 @@ def render_momentum_tab_both(
                     "ATR from MA50 最大値 (%)", value=6.0, step=0.1,
                     key=f"{tab_key}_atr_max"
                 )
+                st.markdown("---")
+                st.markdown("**ADR条件**")
                 adr_min = st.number_input(
-                    "ADR 最小値 (%)", value=4.0, step=0.5,
+                    "ADR 最小値 (%)", value=2.5, step=0.1,   # ★ 修正
                     key=f"{tab_key}_adr_min"
+                )
+                adr_max = st.number_input(
+                    "ADR 最大値 (%)", value=5.5, step=0.1,   # ★ 新規追加
+                    key=f"{tab_key}_adr_max"
                 )
             else:
                 atr_min = atr_max = adr_min = 0.0
+                adr_max = float('inf')             # ★ 無効時は上限なし
                 st.info("テクニカル条件は無効です。")
 
         with col_t2:
@@ -803,17 +810,17 @@ def render_momentum_tab_both(
             if enable_rs_cw:
                 individual_rs_min = st.number_input(
                     "Individual RS Percentile 最小値",
-                    value=80, step=1,           # 変更なし
+                    value=80, step=1,
                     key=f"{tab_key}_ind_rs_min"
                 )
                 sector_rs_cw_min = st.number_input(
                     "Sector RS Pct CW 最小値",
-                    value=70, step=1,           # ★ 79→70
+                    value=70, step=1,
                     key=f"{tab_key}_sec_rs_cw_min"
                 )
                 industry_rs_cw_min = st.number_input(
                     "Industry RS Pct CW 最小値",
-                    value=70, step=1,           # ★ 80→70
+                    value=70, step=1,
                     key=f"{tab_key}_ind_rs_cw_min"
                 )
             else:
@@ -829,12 +836,12 @@ def render_momentum_tab_both(
             if enable_rs_ew:
                 sector_rs_ew_min = st.number_input(
                     "Sector RS Pct EW 最小値",
-                    value=70, step=1,           # ★ 79→70
+                    value=70, step=1,
                     key=f"{tab_key}_sec_rs_ew_min"
                 )
                 industry_rs_ew_min = st.number_input(
                     "Industry RS Pct EW 最小値",
-                    value=70, step=1,           # ★ 80→70
+                    value=70, step=1,
                     key=f"{tab_key}_ind_rs_ew_min"
                 )
             else:
@@ -850,7 +857,7 @@ def render_momentum_tab_both(
         if enable_technical:
             lines += [
                 f"  - ATR: {atr_min}% ~ {atr_max}%",
-                f"  - ADR: {adr_min}% 以上",
+                f"  - ADR: {adr_min}% ~ {adr_max}%",   # ★ 上限追記
                 f"  - MA21条件: {'✅' if ma21_cond else '❌'}",
                 f"  - MA50条件: {'✅' if ma50_cond else '❌'}",
                 f"  - MA150条件: {'✅' if ma150_cond else '❌'}",
@@ -890,7 +897,10 @@ def render_momentum_tab_both(
                 (filtered['ATR_Pct_from_MA50'] <= atr_max)
             ]
         if 'ADR' in filtered.columns:
-            filtered = filtered[filtered['ADR'] >= adr_min]
+            filtered = filtered[
+                (filtered['ADR'] >= adr_min) &
+                (filtered['ADR'] <= adr_max)             # ★ 上限追加
+            ]
         if ma21_cond and {'MA21', 'Current_Price'}.issubset(filtered.columns):
             filtered = filtered[filtered['Current_Price'] > filtered['MA21']]
         if ma50_cond and {'MA50', 'Current_Price'}.issubset(filtered.columns):
